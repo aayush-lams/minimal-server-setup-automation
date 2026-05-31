@@ -49,6 +49,6 @@
 [linux:vars]
 
 ansible_user=asur
-ansible_ssh_pass=27872
+ansible_ssh_pass=********
 
 

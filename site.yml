@@ -1,9 +1,19 @@
 ---
 - name: Server Setup
   hosts: linux
-  become: yes
-  gather_facts: yes
+  become: true
+  gather_facts: true
+
+  vars:
+    admin_user: asur
+    guest_user: guest
 
   roles:
-    # - docker_compose
+    - user_management
+    - auditing
+    - security
+    - reporting
+    - docker_compose
     - navidrome
+    - nginx
+    - scripts

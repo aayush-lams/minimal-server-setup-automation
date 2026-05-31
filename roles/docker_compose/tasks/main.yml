@@ -50,5 +50,5 @@
     name: docker
     state: restarted
     masked: no
-    enabled: yes          # ← add this so it starts on boot
-  tags: install_docker
+    enabled: yes
+    ags: install_docker

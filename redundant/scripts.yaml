@@ -1,0 +1,21 @@
+---
+- name: Copy backup script to remote host
+  hosts: linux
+  become: yes
+  
+  tasks:
+    - name: Copy backup.sh to /usr/local/bin
+      copy:
+        src: ./scripts/backup_script.sh                    # Local path
+        dest: /usr/local/bin/backup.sh
+        mode: '0755'
+        owner: root
+        group: root
+
+    - name: Copy health.sh to /usr/local/bin
+      copy:
+        src: ./scripts/health_check.sh                    # Local path
+        dest: /usr/local/bin/health.sh
+        mode: '0755'
+        owner: root
+        group: root

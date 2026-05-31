@@ -1,0 +1,45 @@
+---
+- name: Create backup directories
+  ansible.builtin.file:
+    path: /var/backups/web
+    state: directory
+    mode: '0755'
+
+- name: Deploy backup script
+  ansible.builtin.copy:
+    src: backup.sh
+    dest: /usr/local/bin/backup.sh
+    mode: '0755'
+    owner: root
+    group: root
+
+- name: Deploy health check script
+  ansible.builtin.copy:
+    src: health.sh
+    dest: /usr/local/bin/health.sh
+    mode: '0755'
+    owner: root
+    group: root
+
+- name: Schedule daily backup
+  ansible.builtin.cron:
+    name: "Daily backup"
+    minute: "0"
+    hour: "2"
+    job: "/usr/local/bin/backup.sh >> /var/log/backup.log 2>&1"
+    user: "{{ admin_user }}"
+
+- name: Schedule daily health check
+  ansible.builtin.cron:
+    name: "Daily health check"
+    minute: "0"
+    hour: "7"
+    job: "/usr/local/bin/health.sh >> /var/log/health.log 2>&1"
+    user: "{{ admin_user }}"
+
+- name: Schedule reboot health check
+  ansible.builtin.cron:
+    name: "Reboot health check"
+    special_time: "reboot"
+    job: "sleep 60 && /usr/local/bin/health.sh >> /var/log/health.log 2>&1"
+    user: "{{ admin_user }}"

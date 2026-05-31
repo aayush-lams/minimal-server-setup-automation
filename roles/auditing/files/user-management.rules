@@ -1,0 +1,10 @@
+# Audit user management actions
+-w /etc/passwd -p wa -k user_modification
+-w /etc/shadow -p wa -k user_modification
+-w /etc/group -p wa -k user_modification
+-w /etc/sudoers -p wa -k sudo_modification
+-w /usr/bin/passwd -p x -k password_changes
+
+# Monitor critical directories
+-w /var/log -p r -k log_access
+-w /etc/ssh/sshd_config -p wa -k ssh_config

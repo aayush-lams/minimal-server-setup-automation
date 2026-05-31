@@ -1,0 +1,330 @@
+---
+- name: User Management and System Foundation
+  hosts: linux
+  become: yes #sudo access
+  gather_facts: yes #initial recon for better intelligence, res alloc
+
+  vars:
+    admin_user: asur
+    guest_user: guest
+    report_dir: "/home/{{ admin_user }}"
+    report_file: "system_report.txt"
+    site_dir: "/var/www"
+
+  tasks:
+    # ============================================
+    # 1. USER CREATION & MANAGEMENT
+    # ============================================
+    
+    - name: Create webadmin user with sudo access
+      user:
+        name: "{{ admin_user }}"
+        state: present
+        shell: /bin/bash
+        groups: sudo
+        append: yes
+        create_home: yes
+        comment: "Web Administrator"
+
+    - name: Create auditor user with read-only access
+      user:
+        name: "{{ guest_user }}"
+        state: present
+        shell: /bin/bash
+        groups: 
+          - adm  # Can read logs
+          - systemd-journal
+        append: yes
+        create_home: yes
+        comment: "System Auditor - Read Only Access"
+
+    # ============================================
+    # 2. PASSWORD POLICIES
+    # ============================================
+    
+    # FIX: register/retries/until/delay are task-level directives,
+    # not apt module parameters — moved outside the module block.
+    - name: Install libpam-pwquality for password quality control
+      apt:
+        name: libpam-pwquality
+        state: present
+        update_cache: yes
+      register: apt_result
+      retries: 5
+      delay: 15
+      until: apt_result is succeeded
+
+    - name: Configure password quality requirements
+      lineinfile:
+        path: /etc/pam.d/common-password
+        regexp: '^password\s+requisite\s+pam_pwquality.so'
+        line: 'password        requisite                       pam_pwquality.so retry=3 minlen=5 difok=1'
+        backup: yes
+
+    - name: Set password aging policies
+      lineinfile:
+        path: /etc/login.defs
+        regexp: "{{ item.regexp }}"
+        line: "{{ item.line }}"
+      loop:
+        - { regexp: '^PASS_MAX_DAYS', line: 'PASS_MAX_DAYS   90' }
+        - { regexp: '^PASS_MIN_DAYS', line: 'PASS_MIN_DAYS   7' }
+        - { regexp: '^PASS_WARN_AGE', line: 'PASS_WARN_AGE   14' }
+
+    - name: Enforce password history (prevent reuse)
+      lineinfile:
+        path: /etc/pam.d/common-password
+        regexp: '^password\s+required\s+pam_unix.so'
+        line: 'password        required                        pam_unix.so remember=5 use_authtok'
+
+    # ============================================
+    # 3. SECURE DEFAULT UMASK
+    # ============================================
+    
+    - name: Create custom profile script for umask
+      copy:
+        content: |
+          # System-wide security settings
+          # Set default umask for all users
+          umask 027
+          
+          # Display security notice on login
+          echo "========================================="
+          echo "  Authorized Access Only"
+          echo "  All activities are monitored and logged"
+          echo "========================================="
+        dest: /etc/profile.d/security.sh
+        mode: '0644'
+        owner: root
+        group: root
+
+    # ============================================
+    # 4. AUDITOR PERMISSIONS (Read-only access)
+    # ============================================
+    
+    - name: Set read-only permissions for logs directory
+      file:
+        path: /var/log
+        state: directory
+        mode: '0750'
+        owner: root
+        group: adm
+
+    # FIX: was referencing undefined variable "auditor_user"; corrected to "guest_user"
+    - name: Set auditor's home directory permissions
+      file:
+        path: "/home/{{ guest_user }}"
+        state: directory
+        mode: '0750'
+        owner: "{{ guest_user }}"
+        group: "{{ guest_user }}"
+
+    # ============================================
+    # 5. SYSTEM DOCUMENTATION & REPORTING
+    # ============================================
+    
+    - name: Ensure webadmin has reporting directory
+      file:
+        path: "{{ report_dir }}"
+        state: directory
+        owner: "{{ admin_user }}"
+        group: "{{ admin_user }}"
+        mode: '0755'
+
+    # FIX: replaced "{{ auditor_user }}" with "{{ guest_user }}" inside the script content
+    - name: Create system documentation script
+      copy:
+        content: |
+          #!/bin/bash
+          # System Documentation Script
+          # Run by webadmin to document system state
+          
+          REPORT_FILE="{{ report_dir }}/{{ report_file }}"
+          SITE_DIR="{{ site_dir }}"
+          
+          {
+              echo "========================================="
+              echo "SYSTEM REPORT - $(date '+%Y-%m-%d %H:%M:%S')"
+              echo "Hostname: $(hostname)"
+              echo "========================================="
+              echo ""
+              
+              echo "=== SITE STRUCTURE ==="
+              if [ -d "$SITE_DIR" ]; then
+                  tree "$SITE_DIR" 2>/dev/null || ls -la "$SITE_DIR"
+              else
+                  echo "$SITE_DIR does not exist"
+              fi
+              echo ""
+              
+              echo "=== BLOCK DEVICES ==="
+              lsblk
+              echo ""
+              
+              echo "=== DISK USAGE ==="
+              df -h
+              echo ""
+              
+              echo "=== MEMORY USAGE ==="
+              free -m
+              echo ""
+              
+              echo "=== RUNNING PROCESSES ==="
+              ps aux --sort=-%cpu | head -20
+              echo ""
+              
+              echo "=== TOP PROCESSES (Batch Mode) ==="
+              top -bn1 | head -20
+              echo ""
+              
+              echo "=== LISTENING PORTS ==="
+              ss -tulpn 2>/dev/null || netstat -tulpn 2>/dev/null
+              echo ""
+              
+              echo "=== SYSTEM USERS ==="
+              cat /etc/passwd | grep -E "^({{ admin_user }}|{{ guest_user }}|root)" || echo "Users not found"
+              echo ""
+              
+              echo "=== SUDO CONFIGURATION ==="
+              cat /etc/sudoers | grep -v "^#" | grep -v "^$" || echo "No sudo rules"
+              echo ""
+              
+              echo "=== FAILED LOGIN ATTEMPTS ==="
+              journalctl -u sshd --since "7 days ago" | grep "Failed password" | tail -10 || echo "No failed attempts"
+              echo ""
+              
+              echo "========================================="
+              echo "END OF REPORT"
+              echo "========================================="
+              
+          } | tee -a "$REPORT_FILE"
+          
+          echo "Report appended to: $REPORT_FILE"
+          
+        dest: /usr/local/bin/system_report.sh
+        mode: '0750'
+        owner: root
+        group: "{{ admin_user }}"
+
+    - name: Create initial system report (as webadmin user)
+      become_user: "{{ admin_user }}"
+      shell: /usr/local/bin/system_report.sh
+      args:
+        creates: "{{ report_dir }}/{{ report_file }}"
+
+    # ============================================
+    # 6. LOCK DOWN DEFAULT CONFIGURATIONS
+    # ============================================
+    
+    - name: Disable root SSH login
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^PermitRootLogin'
+        line: 'PermitRootLogin no'
+      notify: restart ssh
+
+    # FIX: was referencing undefined "auditor_user"; corrected to "guest_user"
+    - name: Limit SSH access to specific users
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^AllowUsers'
+        line: 'AllowUsers {{ admin_user }} {{ guest_user }}'
+      notify: restart ssh
+
+    # FIX: /etc/passwd and /etc/group must be world-readable (0644), not 0640.
+    # Mode 0640 breaks tools like id, ls, su, cron that read /etc/passwd as
+    # unprivileged users. /etc/shadow correctly stays at 0640 (root:shadow).
+    - name: Set proper permissions on sensitive files
+      file:
+        path: "{{ item.path }}"
+        mode: "{{ item.mode }}"
+        owner: root
+        group: "{{ item.group }}"
+      loop:
+        - { path: '/etc/shadow',  mode: '0640', group: 'shadow' }
+        - { path: '/etc/passwd',  mode: '0644', group: 'root'   }
+        - { path: '/etc/group',   mode: '0644', group: 'root'   }
+        - { path: '/etc/sudoers', mode: '0640', group: 'root'   }
+
+    # FIX: was referencing undefined "auditor_user"; corrected to "guest_user"
+    - name: Set strict permissions on webadmin home
+      file:
+        path: "{{ report_dir }}"
+        state: directory
+        mode: '0750'
+        owner: "{{ admin_user }}"
+        group: "{{ guest_user }}"
+
+    # ============================================
+    # 7. AUDITING AND MONITORING
+    # ============================================
+    
+    - name: Install auditd for system auditing
+      apt:
+        name: auditd
+        state: present
+
+    - name: Configure audit rules for user management
+      copy:
+        content: |
+          # Audit user management actions
+          -w /etc/passwd -p wa -k user_modification
+          -w /etc/shadow -p wa -k user_modification
+          -w /etc/group -p wa -k user_modification
+          -w /etc/sudoers -p wa -k sudo_modification
+          -w /usr/bin/passwd -p x -k password_changes
+          
+          # Monitor critical directories
+          -w /var/log -p r -k log_access
+          -w /etc/ssh/sshd_config -p wa -k ssh_config
+        dest: /etc/audit/rules.d/user-management.rules
+      notify: restart auditd
+
+    # FIX: replaced "{{ auditor_user }}" with "{{ guest_user }}" inside the script content
+    - name: Create weekly audit report script
+      copy:
+        content: |
+          #!/bin/bash
+          # Weekly audit report for auditor
+          
+          REPORT="/home/{{ guest_user }}/audit_report_$(date +%Y%m%d).txt"
+          
+          {
+              echo "AUDIT REPORT - $(date)"
+              echo "================================"
+              echo ""
+              echo "=== Recent User Changes ==="
+              ausearch -k user_modification --start -7d 2>/dev/null | head -50
+              echo ""
+              echo "=== Recent Sudo Changes ==="
+              ausearch -k sudo_modification --start -7d 2>/dev/null | head -20
+              echo ""
+              echo "=== Failed Login Attempts ==="
+              lastb | head -20
+              echo ""
+              echo "=== Current Logged-in Users ==="
+              who
+              echo ""
+              echo "=== Sudo Commands Executed ==="
+              journalctl -u sudo --since -7d | tail -30
+          } > "$REPORT"
+          
+          chmod 640 "$REPORT"
+          chown {{ guest_user }}:{{ guest_user }} "$REPORT"
+          
+          echo "Audit report generated: $REPORT"
+        dest: /usr/local/bin/audit_report.sh
+        mode: '0750'
+        owner: root
+        group: "{{ guest_user }}"
+
+  handlers:
+    - name: restart ssh
+      service:
+        name: ssh
+        state: restarted
+
+    - name: restart auditd
+      service:
+        name: auditd
+        state: restarted
