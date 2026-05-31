@@ -1,0 +1,70 @@
+---
+# ============================================
+# 1. INSTALL AUDITD
+# ============================================
+
+- name: Install auditd for system auditing
+  apt:
+    name: auditd
+    state: present
+
+# ============================================
+# 2. CONFIGURE AUDIT RULES
+# ============================================
+
+- name: Configure audit rules for user management
+  copy:
+    content: |
+      # Audit user management actions
+      -w /etc/passwd -p wa -k user_modification
+      -w /etc/shadow -p wa -k user_modification
+      -w /etc/group -p wa -k user_modification
+      -w /etc/sudoers -p wa -k sudo_modification
+      -w /usr/bin/passwd -p x -k password_changes
+      
+      # Monitor critical directories
+      -w /var/log -p r -k log_access
+      -w /etc/ssh/sshd_config -p wa -k ssh_config
+    dest: /etc/audit/rules.d/user-management.rules
+  notify: restart auditd
+
+# ============================================
+# 3. WEEKLY AUDIT REPORT SCRIPT
+# ============================================
+
+- name: Create weekly audit report script
+  copy:
+    content: |
+      #!/bin/bash
+      # Weekly audit report for auditor
+      
+      REPORT="/home/{{ guest_user }}/audit_report_$(date +%Y%m%d).txt"
+      
+      {
+          echo "AUDIT REPORT - $(date)"
+          echo "================================"
+          echo ""
+          echo "=== Recent User Changes ==="
+          ausearch -k user_modification --start -7d 2>/dev/null | head -50
+          echo ""
+          echo "=== Recent Sudo Changes ==="
+          ausearch -k sudo_modification --start -7d 2>/dev/null | head -20
+          echo ""
+          echo "=== Failed Login Attempts ==="
+          lastb | head -20
+          echo ""
+          echo "=== Current Logged-in Users ==="
+          who
+          echo ""
+          echo "=== Sudo Commands Executed ==="
+          journalctl -u sudo --since -7d | tail -30
+      } > "$REPORT"
+      
+      chmod 640 "$REPORT"
+      chown {{ guest_user }}:{{ guest_user }} "$REPORT"
+      
+      echo "Audit report generated: $REPORT"
+    dest: /usr/local/bin/audit_report.sh
+    mode: '0750'
+    owner: root
+    group: "{{ guest_user }}"

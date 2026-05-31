@@ -1,0 +1,3 @@
+---
+nginx_server_name: navidrome.local
+navidrome_port: 4533

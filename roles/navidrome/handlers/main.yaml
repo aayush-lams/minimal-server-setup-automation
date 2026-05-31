@@ -1,0 +1,6 @@
+---
+- name: restart navidrome
+  community.docker.docker_compose_v2:
+    project_src: "{{ navidrome_dir }}"
+    state: present
+    recreate: yes

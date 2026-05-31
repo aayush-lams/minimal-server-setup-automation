@@ -3,10 +3,9 @@
 {
     environment.etc."ansible/ansible.cfg".text = ''
         [defaults]
-        inventory = path_to_hosts file
-        remote_user = server_name
+        inventory = /home/asur/Documents/cloned/ansible/hosts
         host_key_checking = True
-        roles_path = path_to_roles folder
+        roles_path = /home/asur/Documents/cloned/ansible/roles
 
         [ssh_connection]
         pipelining = True

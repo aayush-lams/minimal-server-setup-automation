@@ -1,0 +1,9 @@
+---
+- name: Server Setup
+  hosts: linux
+  become: yes
+  gather_facts: yes
+
+  roles:
+    # - docker_compose
+    - navidrome

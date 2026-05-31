@@ -1,0 +1,32 @@
+---
+- name: Create Navidrome directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+  loop:
+    - "{{ navidrome_dir }}"
+    - "{{ navidrome_dir }}/data"
+    - "{{ music_dir }}"
+
+- name: Copy docker-compose.yml
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ navidrome_dir }}/docker-compose.yml"
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: '0644'
+  notify: restart navidrome
+
+- name: Start Navidrome
+  community.docker.docker_compose_v2:
+    project_src: "{{ navidrome_dir }}"
+    state: present
+  register: compose_result
+
+- name: Show Navidrome status
+  ansible.builtin.debug:
+    msg: "Navidrome running at http://{{ ansible_host }}:{{ navidrome_port }}"
+  when: compose_result.changed

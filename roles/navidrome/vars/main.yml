@@ -1,0 +1,4 @@
+---
+navidrome_dir: /opt/navidrome
+music_dir: "/home/{{ ansible_user }}/music"
+navidrome_port: 4533
