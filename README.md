@@ -71,10 +71,6 @@ Global variables are defined once in `site.yml` and available to every role:
 Role-specific variables (e.g. `navidrome_port`, `nginx_server_name`) are
 defined in `roles/<name>/vars/main.yml`.
 
-## Security notes
-
-- The `hosts` file contains a plaintext SSH password. **Do not commit this
-  repository to a public remote.**
-- There is no `.gitignore` file.
+## notes
 - This is a local-lab setup — no CI, tests, linters, or pre-commit hooks are
   configured.
